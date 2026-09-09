@@ -17,6 +17,7 @@ public class PlayerController extends InputAdapter {
     private static final float EXHAUSTION_COOLDOWN = 8f, SPRINT_RECOVERY_THRESHOLD = 65f;
     private static final float HALF_WIDTH = .30f, STANDING_HEIGHT = 1.80f, CROUCH_HEIGHT = 1.15f, STEP = .10f;
     private static final float STANDING_EYE_HEIGHT = 1.62f, CROUCH_EYE_HEIGHT = 1.02f;
+    private static final float JUMP_BUFFER_TIME = .12f, COYOTE_TIME = .10f, GROUND_PROBE_DEPTH = .06f;
     private final PerspectiveCamera camera;
     private final VoxelWorld world;
     private final Vector3 position = new Vector3(), velocity = new Vector3(), horizontalVelocity = new Vector3(), spawn = new Vector3();
@@ -31,12 +32,14 @@ public class PlayerController extends InputAdapter {
     private boolean exhausted;
     private float stamina = STAMINA_MAX;
     private float sprintCooldown;
+    private float jumpBuffer;
+    private float coyoteTime;
 
     public PlayerController(PerspectiveCamera camera, VoxelWorld world, Vector3 spawn) {
         this.camera = camera; this.world = world; this.spawn.set(spawn); position.set(spawn); updateCamera();
     }
     public void update(float delta) {
-        look(); input(delta); moveHorizontal(delta); moveVertical(delta); updateCamera();
+        updateGroundState(delta); look(); input(delta); tryJump(); moveHorizontal(delta); moveVertical(delta); updateCamera();
         if (position.y <= VoxelWorld.VOID_Y) { position.set(spawn); velocity.setZero(); horizontalVelocity.setZero(); }
     }
     private void look() {
@@ -48,7 +51,7 @@ public class PlayerController extends InputAdapter {
         if (Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.SHIFT_RIGHT)) sprintToggled = !sprintToggled;
         if (Gdx.input.isKeyJustPressed(Input.Keys.CONTROL_LEFT) || Gdx.input.isKeyJustPressed(Input.Keys.CONTROL_RIGHT)) toggleCrouch();
         if (Gdx.input.isKeyJustPressed(Input.Keys.F5)) debugVisible = !debugVisible;
-        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE) && grounded) { velocity.y = JUMP_VELOCITY; grounded = false; }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE)) jumpBuffer = JUMP_BUFFER_TIME;
     }
     private void moveHorizontal(float delta) {
         float radians = (float) Math.toRadians(yaw); forward.set((float)Math.cos(radians), 0, (float)Math.sin(radians)).nor(); right.set(forward).crs(Vector3.Y).nor();
@@ -59,13 +62,15 @@ public class PlayerController extends InputAdapter {
         if (Gdx.input.isKeyPressed(Input.Keys.A)) wish.sub(right);
         boolean moving = wish.len2() > 0;
         boolean sprinting = sprintToggled && !crouching && !exhausted && moving;
-        updateStamina(delta, sprinting);
         float speed = crouching ? CROUCH_SPEED : exhausted ? EXHAUSTED_SPEED : sprinting ? SPRINT_SPEED : WALK_SPEED;
         if (moving) wish.nor().scl(speed);
         float acceleration = moving ? (grounded ? 24f : 8f) : 30f;
         horizontalVelocity.x = approach(horizontalVelocity.x, wish.x, acceleration * delta);
         horizontalVelocity.z = approach(horizontalVelocity.z, wish.z, acceleration * delta);
+        float oldX = position.x, oldZ = position.z;
         moveAxis(horizontalVelocity.x * delta, 0); moveAxis(horizontalVelocity.z * delta, 1);
+        boolean actuallyMoved = (position.x - oldX) * (position.x - oldX) + (position.z - oldZ) * (position.z - oldZ) > .000001f;
+        updateStamina(delta, sprinting && actuallyMoved);
     }
     private void moveVertical(float delta) { velocity.y += GRAVITY * delta; grounded = false; moveAxis(velocity.y * delta, 2); }
     private void moveAxis(float amount, int axis) {
@@ -84,6 +89,26 @@ public class PlayerController extends InputAdapter {
         int minZ = floor(position.z - HALF_WIDTH), maxZ = floor(position.z + HALF_WIDTH);
         for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) if (world.isSolid(x, y, z)) return true;
         return false;
+    }
+    private void updateGroundState(float delta) {
+        boolean standingOnGround = velocity.y <= 0f && isStandingOnGround();
+        grounded = standingOnGround;
+        coyoteTime = standingOnGround ? COYOTE_TIME : Math.max(0f, coyoteTime - delta);
+        jumpBuffer = Math.max(0f, jumpBuffer - delta);
+    }
+    private boolean isStandingOnGround() {
+        int minX = floor(position.x - HALF_WIDTH), maxX = floor(position.x + HALF_WIDTH);
+        int y = floor(position.y - GROUND_PROBE_DEPTH);
+        int minZ = floor(position.z - HALF_WIDTH), maxZ = floor(position.z + HALF_WIDTH);
+        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) if (world.isSolid(x, y, z)) return true;
+        return false;
+    }
+    private void tryJump() {
+        if (jumpBuffer <= 0f || coyoteTime <= 0f) return;
+        velocity.y = JUMP_VELOCITY;
+        grounded = false;
+        coyoteTime = 0f;
+        jumpBuffer = 0f;
     }
     public boolean intersectsBlock(int x, int y, int z) {
         return position.x + HALF_WIDTH > x && position.x - HALF_WIDTH < x + 1 && position.y + bodyHeight() > y && position.y < y + 1 && position.z + HALF_WIDTH > z && position.z - HALF_WIDTH < z + 1;

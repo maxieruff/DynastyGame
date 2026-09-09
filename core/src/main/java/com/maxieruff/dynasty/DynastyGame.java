@@ -21,9 +21,9 @@ import com.maxieruff.dynasty.world.RaycastHit;
 import com.maxieruff.dynasty.world.VoxelRaycaster;
 import com.maxieruff.dynasty.world.VoxelWorld;
 
-/** Alpha v0.0.1 voxel prototype: editable chunks, collision, selection, and debug HUD. */
+/** Alpha 0.1.1 voxel prototype: editable chunks, collision, selection, and debug HUD. */
 public class DynastyGame extends ApplicationAdapter {
-    public static final String VERSION = "Alpha 0.1.0";
+    public static final String VERSION = "Alpha 0.1.1";
     /** Reserved for the main menu once that screen is added. */
     public static final String MAIN_MENU_FONT = "ui/OldLondon.ttf";
     private PerspectiveCamera camera;
@@ -98,7 +98,7 @@ public class DynastyGame extends ApplicationAdapter {
 
         spriteBatch.setProjectionMatrix(hudCamera.combined);
         spriteBatch.begin(); font.setColor(Color.WHITE);
-        if (controller.isDebugVisible()) { Vector3 p=controller.getPosition(); font.draw(spriteBatch, VERSION + "  |  " + Gdx.graphics.getFramesPerSecond() + " fps", 12, height - 12); font.draw(spriteBatch, String.format("XYZ: %.2f / %.2f / %.2f", p.x,p.y,p.z), 12, height - 32); font.draw(spriteBatch, String.format("Stamina: %.0f%%  |  %s%s  |  Shift: sprint toggle   C: crouch   LMB: break", controller.getStamina(), controller.isSprinting() ? "sprinting" : "walking", controller.isCrouching() ? ", crouched" : ""), 12, height - 52); }
+        if (controller.isDebugVisible()) { Vector3 p=controller.getPosition(); font.draw(spriteBatch, VERSION + "  |  " + Gdx.graphics.getFramesPerSecond() + " fps", 12, height - 12); font.draw(spriteBatch, String.format("XYZ: %.2f / %.2f / %.2f", p.x,p.y,p.z), 12, height - 32); font.draw(spriteBatch, String.format("Stamina: %.0f%%  |  %s%s  |  Shift: sprint toggle   Ctrl: crouch   LMB: break", controller.getStamina(), controller.isSprinting() ? "sprinting" : "walking", controller.isCrouching() ? ", crouched" : ""), 12, height - 52); }
         spriteBatch.end();
     }
     private void drawHandBar(float x, float y, float width, float height) {
