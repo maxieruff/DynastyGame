@@ -12,8 +12,8 @@ import com.badlogic.gdx.math.collision.BoundingBox;
 /** A 16x16 vertical slice of the voxel world. Only exposed block faces are meshed. */
 public class VoxelChunk {
     public static final int SIZE = 16;
-    /** 30 stone + 4 dirt + 1 grass, plus 20 blocks of build height. */
-    public static final int HEIGHT = 55;
+    /** The world supports terrain and structures up to y=399. */
+    public static final int HEIGHT = 400;
     private static final int ATTRS = Usage.Position | Usage.Normal | Usage.TextureCoordinates;
     private final int originX, originZ;
     private final BlockType[][][] blocks = new BlockType[SIZE][HEIGHT][SIZE];
@@ -22,11 +22,14 @@ public class VoxelChunk {
 
     public VoxelChunk(int originX, int originZ) {
         this.originX = originX; this.originZ = originZ;
-        for (int x = 0; x < SIZE; x++) for (int y = 0; y < HEIGHT; y++) for (int z = 0; z < SIZE; z++) blocks[x][y][z] = BlockType.AIR;
     }
     public int getOriginX() { return originX; }
     public int getOriginZ() { return originZ; }
-    public BlockType getLocal(int x, int y, int z) { return x < 0 || x >= SIZE || y < 0 || y >= HEIGHT || z < 0 || z >= SIZE ? BlockType.AIR : blocks[x][y][z]; }
+    public BlockType getLocal(int x, int y, int z) {
+        if (x < 0 || x >= SIZE || y < 0 || y >= HEIGHT || z < 0 || z >= SIZE) return BlockType.AIR;
+        BlockType block = blocks[x][y][z];
+        return block == null ? BlockType.AIR : block;
+    }
     public void setLocal(int x, int y, int z, BlockType type) { if (x >= 0 && x < SIZE && y >= 0 && y < HEIGHT && z >= 0 && z < SIZE) blocks[x][y][z] = type; }
     public ModelInstance getInstance() { return instance; }
     public void getBounds(BoundingBox out) {

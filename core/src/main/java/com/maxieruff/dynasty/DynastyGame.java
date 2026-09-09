@@ -17,14 +17,15 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.utils.Array;
 import com.maxieruff.dynasty.player.PlayerController;
-import com.maxieruff.dynasty.world.BlockType;
 import com.maxieruff.dynasty.world.RaycastHit;
 import com.maxieruff.dynasty.world.VoxelRaycaster;
 import com.maxieruff.dynasty.world.VoxelWorld;
 
 /** Alpha v0.0.1 voxel prototype: editable chunks, collision, selection, and debug HUD. */
 public class DynastyGame extends ApplicationAdapter {
-    public static final String VERSION = "Pre-Alpha Demo";
+    public static final String VERSION = "Alpha 0.1.0";
+    /** Reserved for the main menu once that screen is added. */
+    public static final String MAIN_MENU_FONT = "ui/OldLondon.ttf";
     private PerspectiveCamera camera;
     private OrthographicCamera hudCamera;
     private ModelBatch modelBatch;
@@ -44,15 +45,19 @@ public class DynastyGame extends ApplicationAdapter {
         modelBatch = new ModelBatch(); shapes = new ShapeRenderer(); spriteBatch = new SpriteBatch(); font = new BitmapFont();
         environment = new Environment(); environment.set(new ColorAttribute(ColorAttribute.AmbientLight, .62f, .62f, .62f, 1)); environment.add(new DirectionalLight().set(.75f,.75f,.75f,-1,-.8f,-.35f));
         world = new VoxelWorld();
-        controller = new PlayerController(camera, world, new Vector3(0, world.getSurfaceY(0, 0) + .01f, 0));
+        controller = new PlayerController(camera, world, new Vector3(0, world.getSpawnY() + .01f, 0));
         Gdx.input.setInputProcessor(controller); Gdx.input.setCursorCatched(true);
     }
     @Override public void render() {
-        controller.update(Math.min(Gdx.graphics.getDeltaTime(), .1f));
-        target = VoxelRaycaster.cast(world, camera.position, camera.direction, 6f); controller.setTarget(target);
+        world.updateStreaming(camera.position.x, camera.position.z);
+        boolean worldReady = world.isInitialLoadComplete();
+        if (worldReady) {
+            controller.update(Math.min(Gdx.graphics.getDeltaTime(), .1f));
+            target = VoxelRaycaster.cast(world, camera.position, camera.direction, 6f); controller.setTarget(target);
+        } else { target = null; controller.setTarget(null); }
         Gdx.gl.glViewport(0,0,Gdx.graphics.getWidth(),Gdx.graphics.getHeight()); Gdx.gl.glClearColor(.45f,.70f,1f,1f); Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
         world.renderableChunks(camera, visibleChunks); modelBatch.begin(camera); for (ModelInstance chunk : visibleChunks) modelBatch.render(chunk, environment); modelBatch.end();
-        drawTargetOutline(); drawHud();
+        if (worldReady) { drawTargetOutline(); drawHud(); } else drawLoadingScreen();
     }
     private void drawTargetOutline() {
         if (target == null || (target.normalX() == 0 && target.normalY() == 0 && target.normalZ() == 0)) return;
@@ -83,12 +88,41 @@ public class DynastyGame extends ApplicationAdapter {
         Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
         shapes.setProjectionMatrix(hudCamera.combined); shapes.begin(ShapeRenderer.ShapeType.Filled);
         shapes.setColor(0,0,0,.62f); shapes.rect(cx - 1, cy - 8, 2, 16); shapes.rect(cx - 8, cy - 1, 16, 2);
-        float size = 46, gap = 4, barWidth = 3 * size + 2 * gap, start = cx - barWidth / 2;
-        for (int i=0;i<3;i++) { float x = start + i * (size + gap); shapes.setColor(i == controller.getSelectedSlot() ? Color.WHITE : Color.DARK_GRAY); shapes.rect(x - 2, 18 - 2, size + 4, size + 4); shapes.setColor(BlockType.fromHotbarSlot(i).getColor()); shapes.rect(x, 18, size, size); }
         shapes.end();
-        spriteBatch.setProjectionMatrix(hudCamera.combined); spriteBatch.begin(); font.setColor(Color.WHITE);
-        for (int i=0;i<3;i++) font.draw(spriteBatch, Integer.toString(i + 1), start + i*(size+gap) + 4, 32);
-        if (controller.isDebugVisible()) { Vector3 p=controller.getPosition(); font.draw(spriteBatch, VERSION + "  |  " + Gdx.graphics.getFramesPerSecond() + " fps", 12, height - 12); font.draw(spriteBatch, String.format("XYZ: %.2f / %.2f / %.2f", p.x,p.y,p.z), 12, height - 32); font.draw(spriteBatch, "F5: toggle debug   1-3 / wheel: select   LMB: break   RMB: place", 12, height - 52); }
+        float handWidth = 148f, handHeight = 36f, xpWidth = 230f, xpHeight = 16f, gap = 18f;
+        float hudWidth = handWidth * 2 + xpWidth + gap * 2;
+        float hudX = cx - hudWidth / 2f, hudY = 24f;
+        drawHandBar(hudX, hudY, handWidth, handHeight);
+        drawXpBar(hudX + handWidth + gap, hudY + (handHeight - xpHeight) / 2f, xpWidth, xpHeight);
+        drawHandBar(hudX + handWidth + gap + xpWidth + gap, hudY, handWidth, handHeight);
+
+        spriteBatch.setProjectionMatrix(hudCamera.combined);
+        spriteBatch.begin(); font.setColor(Color.WHITE);
+        if (controller.isDebugVisible()) { Vector3 p=controller.getPosition(); font.draw(spriteBatch, VERSION + "  |  " + Gdx.graphics.getFramesPerSecond() + " fps", 12, height - 12); font.draw(spriteBatch, String.format("XYZ: %.2f / %.2f / %.2f", p.x,p.y,p.z), 12, height - 32); font.draw(spriteBatch, String.format("Stamina: %.0f%%  |  %s%s  |  Shift: sprint toggle   C: crouch   LMB: break", controller.getStamina(), controller.isSprinting() ? "sprinting" : "walking", controller.isCrouching() ? ", crouched" : ""), 12, height - 52); }
+        spriteBatch.end();
+    }
+    private void drawHandBar(float x, float y, float width, float height) {
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(Color.BLACK); shapes.rect(x, y, width, height);
+        shapes.setColor(.18f, .18f, .20f, .88f); shapes.rect(x + 5, y + 5, width - 10, height - 10);
+        shapes.end();
+    }
+    private void drawXpBar(float x, float y, float width, float height) {
+        shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(Color.BLACK); shapes.rect(x, y, width, height);
+        shapes.setColor(.10f, .10f, .12f, .92f); shapes.rect(x + 4, y + 4, width - 8, height - 8);
+        shapes.end();
+    }
+    private void drawLoadingScreen() {
+        float width = Gdx.graphics.getWidth(), height = Gdx.graphics.getHeight(), progress = world.getInitialLoadProgress();
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST); shapes.setProjectionMatrix(hudCamera.combined); shapes.begin(ShapeRenderer.ShapeType.Filled);
+        shapes.setColor(0f, 0f, 0f, .70f); shapes.rect(0, 0, width, height);
+        float barWidth = Math.min(420f, width - 80f), barX = (width - barWidth) / 2f, barY = height / 2f - 12f;
+        shapes.setColor(Color.BLACK); shapes.rect(barX, barY, barWidth, 24f);
+        shapes.setColor(.67f, .53f, .22f, 1f); shapes.rect(barX + 4, barY + 4, (barWidth - 8) * progress, 16f);
+        shapes.end(); spriteBatch.setProjectionMatrix(hudCamera.combined); spriteBatch.begin(); font.setColor(Color.WHITE);
+        font.draw(spriteBatch, "Building world... " + Math.round(progress * 100f) + "%", barX, barY + 48f);
+        font.draw(spriteBatch, "Seed: " + world.getSeed() + "  |  Render distance: " + VoxelWorld.DEFAULT_RENDER_DISTANCE + " chunks", barX, barY - 12f);
         spriteBatch.end();
     }
     @Override public void resize(int width, int height) { if (camera != null) { camera.viewportWidth=width; camera.viewportHeight=height; camera.update(); } if (hudCamera != null) { hudCamera.setToOrtho(false,width,height); hudCamera.update(); } }
